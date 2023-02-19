@@ -1,0 +1,65 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+
+exporters:
+  otlp:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+  prometheus:
+    endpoint: otel-collector:8889
+    namespace: app
+    metric_expiration: 30s
+    const_labels:
+      environment: local
+  loki:
+    endpoint: "http://loki:3100/loki/api/v1/push"
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 30
+  batch:
+    timeout: 1s
+    send_batch_size: 8192
+  resource:
+    attributes:
+    - action: upsert
+      key: environment
+      value: local
+    - action: upsert
+      key: service_name
+      from_attribute: service.name
+    - action: upsert
+      key: service_version
+      from_attribute: service.version
+    - action: upsert
+      key: loki.resource.labels
+      value: service_name, service_version
+
+extensions:
+  health_check:
+  memory_ballast:
+    size_mib: 256
+
+service:
+  extensions: [health_check, memory_ballast]
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlp]
+      processors: [memory_limiter, resource, batch]
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheus]
+      processors: [memory_limiter, resource, batch]
+    logs:
+      receivers: [otlp]
+      exporters: [loki]
+      processors: [memory_limiter, resource, batch]
